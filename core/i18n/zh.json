@@ -22,7 +22,8 @@
       "rebuild_graph": ["确认图记忆功能已启用","确认数据库与索引文件可读写","查看日志定位具体失败文档"],
       "summarize": ["确认当前会话至少有 2 条未总结消息","确认 LLM Provider 可正常响应","检查日志中的 summary 处理堆栈"],
       "reset": ["确认会话 ID 有效且会话存储可访问","确认数据库未被占用","查看日志中的 clear_session 调用堆栈"],
-      "cleanup": ["确认当前会话存在可读取的历史记录","确认对话存储可读写","查看日志中的 cleanup 调用堆栈"]
+      "cleanup": ["确认当前会话存在可读取的历史记录","确认对话存储可读写","查看日志中的 cleanup 调用堆栈"],
+      "migrate_scope": ["确认目标作用域书写正确（global/session/user 或字面值）","迁移前会自动生成数据库备份，必要时可用它回滚","迁移完成后建议执行 /lmem rebuild-index 重建索引"]
     }
   },
   "status": {
@@ -55,6 +56,20 @@
     "partial_notice": "\n注意: 本次重建存在少量失败，失败率 {ratio:.2%}，未超过安全阈值。可稍后再次执行 /lmem rebuild-index 补齐。",
     "result_template": "索引重建完成。\n\n处理结果:\n• 成功: {success} 条\n• 失败: {failed} 条\n• 总计: {total} 条\n• 向量处理模式: {vector_mode}\n• 新索引切换: {switched}\n{partial_notice}\n\n现在可以继续使用召回功能。",
     "failed": "索引重建失败。\n错误详情: {message}\n请查看日志确认失败原因后重试 /lmem rebuild-index。"
+  },
+  "migrate_scope": {
+    "action_name": "作用域迁移",
+    "usage": "用法: /lmem migrate-scope <target> [source] [apply]\n\ntarget 支持:\n• global —— 迁移到全局作用域 livingmemory:global\n• session —— 迁移到当前会话\n• user —— 迁移到当前用户（跨私聊/群聊共享）\n• 其他字符串 —— 按字面作用域使用\n\nsource 可选，仅迁移该来源作用域的记录。\n默认仅预览（dry-run）；确认无误后追加 apply 才会真正写库。",
+    "empty_scope": "(空作用域)",
+    "scope_line": "• {scope}: 记忆 {documents} 条 / 原子 {atoms} 条",
+    "survey": "当前作用域分布（记忆 / 原子）:\n{scopes}\n\n合计: {total} 条",
+    "nothing_to_do": "没有需要迁移的记录：它们已经位于目标作用域 {target}。",
+    "any_source": "全部来源",
+    "impact_line": "• {scope}: {count} 条",
+    "plan": "迁移预览（dry-run）\n\n目标作用域: {target}\n来源限制: {source}\n\n将影响:\n{impact}\n\n共 {total} 条（记忆 {documents} / 原子 {atoms}）",
+    "dry_run_hint": "以上仅为预览，未写入任何数据。\n确认无误后执行: /lmem migrate-scope <target> [source] apply",
+    "done": "作用域迁移完成。\n\n目标作用域: {target}\n已更新: 记忆 {documents} 条 / 原子 {atoms} 条（共 {total} 条）\n数据库备份: {backup}",
+    "rebuild_hint": "建议执行 /lmem rebuild-index，让向量索引与新作用域保持一致。"
   },
   "rebuild_graph": {
     "action_name": "重建图记忆",

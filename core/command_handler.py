@@ -6,6 +6,7 @@
 import os
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageEventResult
@@ -14,7 +15,13 @@ from .base.config_manager import ConfigManager
 from .i18n_backend import t, t_list
 from .managers.conversation_manager import ConversationManager
 from .managers.memory_engine import MemoryEngine
-from .memory_scope import is_event_memory_allowed, resolve_memory_scope
+from .managers.scope_migrator import ScopeMigrator
+from .memory_scope import (
+    GLOBAL_MEMORY_SCOPE,
+    is_event_memory_allowed,
+    resolve_event_identity,
+    resolve_memory_scope,
+)
 from .memory_source import serialize_source_messages
 from .validators.index_validator import IndexValidator
 
@@ -301,6 +308,150 @@ class CommandHandler:
                     t("rebuild_index.action_name"),
                     e,
                     t_list("error.suggestions.rebuild_index"),
+                )
+            )
+
+    @staticmethod
+    def _resolve_target_scope(event: AstrMessageEvent, raw: str) -> str:
+        """把用户输入解析为目标作用域。
+
+        ``global`` / ``session`` / ``user`` 为关键字，分别解析为全局作用域、
+        当前会话的 unified_msg_origin、以及基于当前事件身份构造的用户作用域；
+        其余输入按字面作用域原样使用（便于迁移到自定义作用域）。
+        """
+        value = (raw or "").strip()
+        if not value:
+            return ""
+
+        key = value.casefold()
+        if key == "global":
+            return GLOBAL_MEMORY_SCOPE
+        if key == "session":
+            return str(getattr(event, "unified_msg_origin", "") or "")
+        if key == "user":
+            platform = str(event.get_platform_name() or "").casefold()
+            identity = resolve_event_identity(None, event).casefold()
+            return f"livingmemory:user:{platform or 'unknown'}:{identity}"
+        return value
+
+    def _scope_migration_backup_path(self) -> Path:
+        """迁移备份路径：数据库同级 backups 目录，带时间戳。"""
+        db_path = Path(getattr(self.memory_engine, "db_path", "livingmemory.db"))
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return db_path.parent / "backups" / f"scope_migration_{stamp}.db"
+
+    async def handle_migrate_scope(
+        self,
+        event: AstrMessageEvent,
+        target: str = "",
+        source: str = "",
+        action: str = "",
+    ) -> AsyncGenerator[MessageEventResult, None]:
+        """处理 /lmem migrate-scope 命令。
+
+        用法::
+
+            /lmem migrate-scope <target> [source] [apply]
+
+        默认仅预览（dry-run），追加 ``apply`` 才真正写库（写库前自动备份）。
+        """
+        if not self.memory_engine:
+            yield event.plain_result(
+                self._component_not_ready_message("记忆引擎", "/lmem migrate-scope")
+            )
+            return
+
+        try:
+            resolved = self._resolve_target_scope(event, target)
+            if not resolved:
+                yield event.plain_result(t("migrate_scope.usage"))
+                return
+
+            db_connection = getattr(self.memory_engine, "db_connection", None)
+            if db_connection is None:
+                yield event.plain_result(
+                    self._component_not_ready_message(
+                        "数据库连接", "/lmem migrate-scope"
+                    )
+                )
+                return
+
+            source_scope = source.strip() or None
+            apply_changes = action.strip().casefold() in {"apply", "yes", "confirm"}
+
+            migrator = ScopeMigrator(db_connection)
+            breakdown = await migrator.survey()
+            plan = await migrator.plan(resolved, source=source_scope)
+
+            scopes_detail = "\n".join(
+                t(
+                    "migrate_scope.scope_line",
+                    scope=scope or t("migrate_scope.empty_scope"),
+                    documents=breakdown.documents.get(scope, 0),
+                    atoms=breakdown.atoms.get(scope, 0),
+                )
+                for scope in breakdown.scopes
+            )
+            yield event.plain_result(
+                t(
+                    "migrate_scope.survey",
+                    scopes=scopes_detail,
+                    total=breakdown.total,
+                )
+            )
+
+            if plan.is_noop:
+                yield event.plain_result(
+                    t("migrate_scope.nothing_to_do", target=resolved)
+                )
+                return
+
+            impact_detail = "\n".join(
+                t(
+                    "migrate_scope.impact_line",
+                    scope=scope or t("migrate_scope.empty_scope"),
+                    count=count,
+                )
+                for scope, count in sorted(plan.by_source.items())
+            )
+            yield event.plain_result(
+                t(
+                    "migrate_scope.plan",
+                    target=resolved,
+                    documents=plan.documents,
+                    atoms=plan.atoms,
+                    total=plan.total,
+                    source=source_scope or t("migrate_scope.any_source"),
+                    impact=impact_detail,
+                )
+            )
+
+            if not apply_changes:
+                yield event.plain_result(t("migrate_scope.dry_run_hint"))
+                return
+
+            result = await migrator.execute(
+                plan, backup_path=self._scope_migration_backup_path()
+            )
+            yield event.plain_result(
+                t(
+                    "migrate_scope.done",
+                    target=result.target,
+                    documents=result.documents,
+                    atoms=result.atoms,
+                    total=result.total,
+                    backup=result.backup_path or t("common.never"),
+                )
+            )
+            yield event.plain_result(t("migrate_scope.rebuild_hint"))
+
+        except Exception as e:
+            logger.error(f"作用域迁移失败: {e}", exc_info=True)
+            yield event.plain_result(
+                self._format_error_message(
+                    t("migrate_scope.action_name"),
+                    e,
+                    t_list("error.suggestions.migrate_scope"),
                 )
             )
 

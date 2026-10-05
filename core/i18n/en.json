@@ -22,7 +22,8 @@
       "rebuild_graph": ["Confirm graph memory feature is enabled", "Confirm database and index files are readable/writable", "Check logs to locate specific failed documents"],
       "summarize": ["Confirm current session has at least 2 unsummarized messages", "Confirm LLM Provider responds normally", "Check logs for summary processing stack trace"],
       "reset": ["Confirm session ID is valid and session storage is accessible", "Confirm database is not occupied", "Check logs for clear_session call stack"],
-      "cleanup": ["Confirm current session has readable historical records", "Confirm conversation storage is readable/writable", "Check logs for cleanup call stack"]
+      "cleanup": ["Confirm current session has readable historical records", "Confirm conversation storage is readable/writable", "Check logs for cleanup call stack"],
+      "migrate_scope": ["Confirm the target scope is written correctly (global/session/user or a literal value)", "A database backup is created automatically before migrating", "Run /lmem rebuild-index afterwards to rebuild the index"]
     }
   },
   "status": {
@@ -55,6 +56,20 @@
     "partial_notice": "\nNote: This rebuild had a few failures, failure rate {ratio:.2%}, within safe threshold. You can run /lmem rebuild-index again later to complete.",
     "result_template": "Index rebuild complete.\n\nResults:\n• Success: {success} items\n• Failed: {failed} items\n• Total: {total} items\n• Vector processing mode: {vector_mode}\n• New index switched: {switched}\n{partial_notice}\n\nYou can now continue using recall features.",
     "failed": "Index rebuild failed.\nError details: {message}\nPlease check logs for the failure reason, then retry /lmem rebuild-index."
+  },
+  "migrate_scope": {
+    "action_name": "Scope migration",
+    "usage": "Usage: /lmem migrate-scope <target> [source] [apply]\n\ntarget options:\n• global — migrate to the global scope livingmemory:global\n• session — migrate to the current session\n• user — migrate to the current user (shared across DMs/groups)\n• any other string — used literally as the scope\n\nsource is optional and limits migration to that origin scope.\nDefault is dry-run; append apply to actually write.",
+    "empty_scope": "(empty scope)",
+    "scope_line": "• {scope}: memories {documents} / atoms {atoms}",
+    "survey": "Current scope distribution (memories / atoms):\n{scopes}\n\nTotal: {total}",
+    "nothing_to_do": "Nothing to migrate: all records are already in the target scope {target}.",
+    "any_source": "all sources",
+    "impact_line": "• {scope}: {count}",
+    "plan": "Migration preview (dry-run)\n\nTarget scope: {target}\nSource filter: {source}\n\nAffected:\n{impact}\n\nTotal {total} (memories {documents} / atoms {atoms})",
+    "dry_run_hint": "This is a preview only; no data was written.\nTo apply: /lmem migrate-scope <target> [source] apply",
+    "done": "Scope migration finished.\n\nTarget scope: {target}\nUpdated: memories {documents} / atoms {atoms} (total {total})\nDatabase backup: {backup}",
+    "rebuild_hint": "Consider running /lmem rebuild-index so the vector index matches the new scope."
   },
   "rebuild_graph": {
     "action_name": "Rebuild graph memory",
